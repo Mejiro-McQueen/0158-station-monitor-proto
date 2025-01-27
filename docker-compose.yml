@@ -1,0 +1,52 @@
+services:
+  station_monitor:
+    container_name: station-monitor-data
+    image: station_monitor:latest
+    depends_on:
+      influx: 
+        condition: service_healthy
+    build:
+        context: .
+    networks: ["station-monitor-network"]
+    environment:
+      - INFLUX_URL=http://influx:8086
+      - INFLUX_ORG=Mithril
+      - INFLUX_BUCKET=Tuatha_de_Danaan
+      - INFLUX_TOKEN=AtoTallYLegiTKey
+      #- TEST_NDJSON=station_monitor_data.ndjson
+      #- SCID=0
+      #- INFLUX_PASS_NUMBER=1
+      #- DEBUG=True
+      #- HOST=0.0.0.0
+      #- PORT=8001
+    ports:
+      - 8001:8001
+    entrypoint: sh influx.sh
+
+  influx:
+    image: influxdb:latest
+    container_name: influx
+    networks: ["station-monitor-network"]
+    environment:
+      ## TIP to recover tokens: docker exec influx influx auth list | awk '/$DOCKER_INFLUXDB_INIT_USERNAME/ {print $4 " "}'
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=rootroot
+      - DOCKER_INFLUXDB_INIT_PASSWORD=rootroot
+      - DOCKER_INFLUXDB_INIT_ORG=Mithril
+      - DOCKER_INFLUXDB_INIT_BUCKET=Tuatha_de_Danaan
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=AtoTallYLegiTKey
+    ports:
+      - 8086:8086
+    ## Persistence
+    # volumes:
+    #    - /gds/influx/data:/var/lib/influxdb2:z
+    #    - /gds/influx/config:/etc/influxdb2:z
+    healthcheck:
+      test: "curl -f influx:8086/"
+      interval: 2s
+      timeout: 5s
+      retries: 5
+      
+networks:
+  station-monitor-network:
+    name: station-monitor-network

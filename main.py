@@ -10,6 +10,9 @@ from functools import reduce
 import traceback as tb
 import socket
 import ast
+import os
+import sys
+import time
 
 
 def deep_get(dictionary, keys, default=None):
@@ -56,11 +59,14 @@ class Monitor_Channel:
         # TODO: This is clunky
         if self.data_type == 'string':
             if isinstance(val_bytes, int):
-                # This is suspicious
-                self.value = val_bytes
+                # val_bytes was extracted as an integer and not bytes (lv_flag=0)
+                # See channel 1099, 1246, etc...
+                # integer values acually represent an ordinal character (e.g. X=88)
+                self.value = chr(val_bytes)
             else:
+                # It's actually a string
                 val_bytes = val_bytes.bytes
-                # There's some null bytes in here, we left a note in the CHDO extraction 
+                # There's some null bytes in here, we left a note in the CHDO extraction
                 self.value = val_bytes.decode('ASCII').replace("\x00", "")
         elif self.data_type == 'enum':
             if not isinstance(val_bytes, int):
@@ -82,7 +88,7 @@ class Monitor_Channel:
                 self.value = val_bytes
             else:
                 self.value = int(val_bytes.uint)
-        else:
+        elif os.getenv("DEBUG"):
             print(f"Unknown type: {self.data_type}")
 
         return self.value
@@ -110,24 +116,19 @@ class Monitor_Channel:
 
 channel_types = {}
 for i in deep_get(q, 'telemetry_dictionary.telemetry_definitions.telemetry'):
-    #print(i)
     m_id = i.get('measurement_id', None)
     if not m_id:
         continue
     measurement_id = int(m_id)
     byte_length = int(i['@byte_length'])
-    #print(i.keys())
     d = deep_get(i, 'categories.category')
     m = {}
-    #print(d)
     for p in d:
         k = p['@name']
         v = p['@value']
         m[k] = v
-    #print(f'{m=}')
-    #break
+
     categories = m
-    #print(measurement_id)
     channel_types[measurement_id] = Monitor_Channel(i['@abbreviation'],
                                                     i['@name'],
                                                     i['@type'],
@@ -147,6 +148,9 @@ Frames received via the RAF connection are sent to the output stream
 class DSN_Monitor():
     def __init__(self):
         pass
+
+    def __call__(self, data):
+        return self.process_sdb(data)
 
     def process_sdb(self, sdb):
         chunks = {'DDD_HEADER': sdb[0:20],
@@ -342,10 +346,8 @@ class DSN_Monitor():
         DATA_CHDO = BitArray(SFDU[chd0_index:])
         res['DATA_CHDO'] = self.process_chdo_28(DATA_CHDO, res['QUATERNARY_CHDO']['NUMBER_CHANNELS'])
 
-        # #print(channel_types)
         final = []
         for channel in res['DATA_CHDO']:
-            #print(channel)
             if channel['lc_value']:
                 val = channel['lc_value']
             else:
@@ -356,16 +358,11 @@ class DSN_Monitor():
                     # Wondering if we need to decode length_value
                     c.decode(val)
                     final.append(c.canonical_map())
-                    #print(val)
                 except Exception as e:
-                    #print(e)
-                    #print(json.dumps(c.canonical_map(), indent=4))
-                    #print(c)
                     tb.print_exc()
                     return final
             else:
                 print(f"M-{channel['channel_number']} is not in the dictionary.")
-                #exit()
         return final
 
     def process_chdo_28(self, chunk, num_channels):
@@ -521,36 +518,31 @@ class DSN_Monitor():
         return res
 
 
-class DSN_Monitor_Main():
-    def __init__(self):
-        self.processor = DSN_Monitor()
-        self.receive_counter = 0
-        # self.host = host
-        # self.port = port
-
-        # s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # print.info(f'Starting station monitor server on: {self.host}:{self.port}')
-        # s.bind((self.host, self.port))
-
-        # while True:
-        #     data, _ = s.recvfrom(60000) # 4500 + 20 + 2 bytes max
-        #     self.process(data)
-
+def main():
+    processor = DSN_Monitor()
+    if os.getenv("TEST_NDJSON"):
         with open('./station_monitor_data.ndjson', 'r') as f:
             while x := f.readline():
                 x = json.loads(x)
                 x = ast.literal_eval(x)
-                self.process(x)
+                res = processor(x)
+                print(json.dumps(res))
+                time.sleep(.2) # 5 Hz
+    else:
+        host = os.getenv("HOST", "0.0.0.0")
+        port = os.getenv("PORT", 8001)
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        if os.getenv("DEBUG"):
+            print.info(f'Starting station monitor server on: {host}:{port}')
+        s.bind((host, port))
 
-    def process(self, data):
-        res = self.processor.process_sdb(bytearray(data))
-        # Print out the data for a quick inspection
-        print(json.dumps(res, indent=4))
-
-
-def main():
-    DSN_Monitor_Main()
+        while True:
+            data, _ = s.recvfrom(60000) # 4500 + 20 + 2 bytes max
+            res = processor.process(data)
+            print(json.dumps(res))
 
 
 if __name__ == "__main__":
     main()
+
+

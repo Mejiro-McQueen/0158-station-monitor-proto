@@ -1,0 +1,97 @@
+* What is this?
+This is a set of scripts for:
+1. Connecting to the JPL DSN SFGI to retrieve 0158-Station Monitor Data
+2. Decoding the SDB and SFDU and outputting the station monitor channel data as a JSON encoded string to stdout.
+3. Optionally, ingest the decoded station monitor data into InfluxDB
+
+* Who is this for?
+This is intended for smaller missions who are not using AMPCS as part of their ground data station and are using the Deep Space Network, and need a way to view 0158 station monitor data.
+
+* Requirements
+You will need to obtain the ~monitor_channel.xml~ for AMPCS from JPL MGSS https://ammos.nasa.gov/contact/. Ask your MIMS.
+
+1. You will require docker.
+2. You will need to work with your MIMS to setup a UDP connection to the DSN's SFGI.
+
+* Installation
+1. Clone this repository.
+2. Copy the ~monitor_channel.xml~ dictionary into this repository.
+3. Adjust environment variables in ~docker-compose.yml~ as necessary.
+4. Run with ~docker-compose up~.
+
+* Viewing Channel Data
+You may view the channel data using the influx GUI [localhost:8086]. Data is also output to stdout.
+
+* FAQ
+** What timestamp is used in influx?
+The timestamp is the system time of the influx container.
+
+The DSN does not supply an SDB for projects SCIDS greater than 256, which would contain timestamp information, so we will not support it.
+
+** I have a SCID greater than 256
+The SFGI will send you SFDUs modify main.py to skip to SFDU decoding or email me to fix it.
+
+** What revision of the AMPCS channel_monitor.xml is supported?
+Revision J. If you need Revision L or K, talk to MGSS to obtain a new dictionary and email me if it doesn't work.
+
+If you do not need channels or updates from L or K, continue using J.
+
+** Can I incorporate portions of the code in my script?
+Respect the license.
+
+** Is there a guarantee that...
+This Software supplied with no warranty and I make no guarantees about its functionality or performance.
+
+Passwords, bucket names, token names, and usernames, ips, ports, etc... used in the docker-compose file are for demonstation purposes only. You should change them to reflect/secure your environment and use SSL where possible.
+
+** Can I use something other than Influx?
+Yes, you can read the JSON from stdout.
+
+** How fast does the data come over?
+The DSN sends the data at 5 hertz.
+
+** Have you tested this with the DSN?
+No.
+
+** Is this software affiliated with JPL, MGSS, DSN, or NASA?
+No.
+
+** Is there support for OpenMCT?
+No.
+
+* Environment Variables and Options
+** Influx
+The following environment variables are used for demonstation purposes. You should reference the Influx documentation for information on how to use them for initial setup or delete these variables and start the influx container independently and perform the initial configuration.
+
+You should also for documentation on how to setup persistent storage.
+
+- DOCKER_INFLUXDB_INIT_MODE
+- DOCKER_INFLUXDB_INIT_USERNAME
+- DOCKER_INFLUXDB_INIT_PASSWORD
+- DOCKER_INFLUXDB_INIT_ORG
+- DOCKER_INFLUXDB_INIT_BUCKET
+- DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+  
+** station_monitor
+INFLUX_URL: http://influx:8086
+      - INFLUX_ORG :: See Influx Documentation
+      - INFLUX_BUCKET :: Influx bucket where monitor data is stored.
+      - INFLUX_TOKEN  :: See Influx Documentation
+      - TEST_NDJSON :: NDJSON file containing binary data from the DSN, used for testing purposes. Ask MGSS/MIMS/DSN for a copy or dump the data directly from the DSN yourself.
+      - SCID :: For future feature. SCID used to support for SCIDS greater than 256.
+      - INFLUX_PASS_NUMBER :: Optional influx tag representing the pass number for your project.
+      - DEBUG :: Print debug information, this breaks piped output.
+      - HOST :: IP that you will serve a UDP connection for the DSN SFGI to connect to, defaults to ~0.0.0.0~.
+      - PORT :: Port that you will serve a UDP connection for the DSN SFGI to connect to, defaults to ~8001~
+*** Entry Points
+**** Stdout
+By default the containter will output channel data as a JSON encoded string to stdout. You can pipe this to other scripts, for example, ~docker compose run station_monitor stdout.sh | jq~
+
+**** Influx Logging
+In the docker-compose.yml set the line: ~entrypoint: sh influx.sh~. Data will be logged to influx and output to stdout.
+
+**** Custom Scripts
+Write a custom script that reads from stdout and add a shell script that pipes the scripts together. See ~influx.sh~ for an example.
+
+* Screenshots
+[[./wind_speed.png]]
