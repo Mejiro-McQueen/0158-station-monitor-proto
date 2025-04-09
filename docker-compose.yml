@@ -1,7 +1,6 @@
 services:
   station_monitor:
     container_name: station-monitor-data
-    image: station_monitor:latest
     depends_on:
       influx: 
         condition: service_healthy
